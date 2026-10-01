@@ -1,0 +1,28 @@
+# Local credentials and environment configuration
+.env
+.env.*
+!.env.example
+.azure/
+
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Local editor and runtime state
+.vscode/
+.foundry/
+.DS_Store
+*.log
+
+# Confidential project inputs and generated reports
+data/
+inputs/
+outputs/
+schick_rates_*
