@@ -19,6 +19,8 @@ azd ai agent invoke "your message"         # Invoke the deployed agent
 
 ## Microsoft Foundry Skill
 
+This project was built with the microsoft-foundry skill. Before working on or answering questions about foundry agents, read the microsoft-foundry skill first.
+
 Install the **Microsoft Foundry Skill** for guided deployment, evaluation, and troubleshooting workflows.
 
 Direct install (preferred, works with any coding agent):
