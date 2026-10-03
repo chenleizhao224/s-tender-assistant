@@ -1,0 +1,1 @@
+"""tender_assistant package."""
