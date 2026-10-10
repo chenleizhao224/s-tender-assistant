@@ -7,6 +7,51 @@ not yet wired into that hosted endpoint.
 
 ## The problem we solve
 
+### Multi-trade classification pilot
+
+From `src/agent-framework-agent-basic-responses`, preview an explicitly selected
+set of schedule rows without model access:
+
+```bash
+python -m tender_assistant.cli.classify_trades --schedule /path/to/schedule.xlsx --rows 105 117 230 231
+```
+
+Add `--run --output outputs/trades/pilot-v1.json` to request GPT-luna trade
+recommendations (maximum 30 work items per call). Optional
+`--evidence /path/to/excerpts.json --source-root /path/to/tender-folder` attaches
+an existing selected-excerpt package and verifies its source files. This does not
+automatically retrieve all relevant documents or interpret drawings. Schedule
+headings/notes are context only; special pricing items remain subject to their
+existing preparation restrictions. Classification is a recommendation, not approval.
+
+Replay and then match an individual classified row:
+
+```bash
+python -m tender_assistant.cli.classify_trades --replay outputs/trades/pilot-v1.json
+python -m tender_assistant.cli.match_rates --row 105 --classification outputs/trades/pilot-v1.json
+```
+
+Saved decisions include reasons, assumptions, supplied context and source IDs.
+Unknown trades, missing/duplicate decisions and unknown citations are rejected.
+`requires_review` decisions do not progress automatically. Current source items
+must match saved classification inputs before pricing. Roading maps to historical
+Pavement candidates. Replay makes no model call. Checksums detect accidental edits,
+not malicious modification. Citation validation checks identity, not semantic truth.
+To classify the complete schedule in resumable batches (preview by default):
+
+```bash
+python -m tender_assistant.cli.batch_trades --schedule /path/to/schedule.xlsx --output-dir outputs/trades/full --reuse outputs/trades/pilot-v1.json
+```
+
+Add `--run` to classify missing rows, at most 25 per call by default. Repeat the
+same command and reuse arguments to resume; saved parts are validated rather than
+overwritten. This full-schedule pilot uses schedule context only, not automatic
+external-document retrieval. A checksummed `combined.json` can be passed to
+`match_rates --classification`. Duplicate decisions or changed source context are
+rejected. The batch summary distinguishes classification from quantity readiness;
+neither is a final pricing approval. Multi-trade **pricing** batch orchestration
+and full report coverage remain a separate next step.
+
 Tender information is spread across documents, revisions, specifications and
 spreadsheets. An estimator must find the relevant scope, locate comparable historical
 work, understand what the historical price includes, and explain an initial value.
