@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 
-from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
 from agent_framework_foundry_hosting import ResponsesHostServer
 from azure.identity import DefaultAzureCredential
@@ -11,9 +10,11 @@ from dotenv import load_dotenv
 
 from tender_assistant.hosting import JsonResponseAgent
 from tender_assistant.hosting.json_response_agent import load_api_response
+from tender_assistant.services.estimates import EstimateService
+from tender_assistant.hosting.estimate_tools import create_chat_agent
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 
 
 def main():
@@ -30,27 +31,14 @@ def main():
         credential=DefaultAzureCredential(),
     )
 
-    chat_agent = Agent(
-        client=client,
-        name="tender-assistant",
-        description="Draft tender intelligence and indicative-value assistant.",
-        instructions=(
-            "You are the Schick Tender Assistant. Explain tender findings, assumptions, "
-            "risks and indicative values clearly. Never describe an indicative subtotal "
-            "as the full tender value. Keep answers concise and preserve estimator review."
-        ),
-        # History will be managed by the hosting infrastructure, thus there
-        # is no need to store history by the service. Learn more at:
-        # https://developers.openai.com/api/reference/resources/responses/methods/create
-        default_options={"store": False},
-    )
-
     response_path = Path(
         os.getenv(
             "TENDER_API_RESPONSE_PATH",
             Path(__file__).parent / "outputs" / "api" / "hopuhopu-2027-rev-0a.json",
         )
     )
+    service = EstimateService([response_path])
+    chat_agent = create_chat_agent(client, service)
     agent = JsonResponseAgent(chat_agent, load_api_response(response_path))
 
     server = ResponsesHostServer(agent)

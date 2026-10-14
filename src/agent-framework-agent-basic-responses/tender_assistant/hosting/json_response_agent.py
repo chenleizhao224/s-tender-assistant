@@ -1,22 +1,12 @@
 """Route one exact machine command to a deterministic saved JSON response."""
 
 import json
-from pathlib import Path
+from tender_assistant.services.estimates import load_api_response
 
 from agent_framework import AgentResponse, AgentResponseUpdate, Content, Message
 
 
 JSON_COMMAND = "GET_INDICATIVE_VALUE_JSON"
-
-
-def load_api_response(path):
-    with Path(path).open(encoding="utf-8") as stream:
-        response = json.load(stream)
-    required = {"schema_version", "status", "currency", "indicative_value", "audit"}
-    missing = required - response.keys()
-    if missing:
-        raise ValueError(f"API response is missing required fields: {sorted(missing)}")
-    return response
 
 
 def _last_text(messages):
