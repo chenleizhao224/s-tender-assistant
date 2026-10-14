@@ -1,0 +1,31 @@
+# Local credentials and environments
+.env
+.env.*
+.azure/
+.venv/
+venv/
+
+# Development files
+.git/
+.vscode/
+.foundry/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+*.log
+.DS_Store
+tests/
+
+# Business inputs and generated results
+data/
+inputs/
+outputs/
+schick_rates_*
+
+# Container build files
+Dockerfile
+.dockerignore
