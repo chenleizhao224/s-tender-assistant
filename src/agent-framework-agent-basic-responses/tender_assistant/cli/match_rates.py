@@ -79,6 +79,7 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--row", type=int)
     parser.add_argument("--trade")
+    parser.add_argument("--classification", type=Path, help="Use a saved, source-checked trade recommendation.")
     parser.add_argument("--replay", type=Path, help="Recalculate a saved estimate offline.")
     parser.add_argument("--save", type=Path, help="Save to a new JSON file (never overwrite).")
     parser.add_argument("--evidence", type=Path, help="Add extracted tender evidence JSON to the matching request.")
@@ -90,7 +91,7 @@ async def main():
     args = parser.parse_args()
 
     if args.replay:
-        if args.row is not None or args.trade or args.cross_trade or args.save or args.evidence:
+        if args.row is not None or args.trade or args.cross_trade or args.save or args.evidence or args.classification:
             parser.error("--replay cannot be combined with matching options.")
         snapshot = load_snapshot(args.replay)
         selected = snapshot["selected_rate"]
@@ -100,8 +101,8 @@ async def main():
         print_snapshot(snapshot)
         return
 
-    if args.row is None or not args.trade:
-        parser.error("Matching requires --row and --trade.")
+    if args.row is None or bool(args.trade) == bool(args.classification):
+        parser.error("Matching requires --row and exactly one of --trade or --classification.")
     if args.save and args.save.exists():
         parser.error("Output file already exists. Use --replay or choose a new --save path.")
 
@@ -138,6 +139,13 @@ async def main():
     if not item["ready_for_rate_matching"]:
         raise ValueError(f"Row is not ready: {item['reason']}")
 
+    classification = None
+    if args.classification:
+        from tender_assistant.schedules.trades import load_classification, decision_for_item, check_saved_evidence
+        classification = load_classification(args.classification)
+        args.trade = decision_for_item(classification, item)["trade"]
+        check_saved_evidence(classification["request"]["evidence"], os.environ["TENDER_INPUT_DIR"])
+
     rates_path = Path(os.environ["SCHICK_RATES_PATH"])
     library_hash = sha256_file(rates_path)
     catalog = build_catalog(load_rates(rates_path))
@@ -151,7 +159,7 @@ async def main():
         if record.unit.strip() == item["unit"].strip()
         and (
             args.cross_trade
-            or normalize(record.trade) == normalize(args.trade)
+            or normalize(record.trade) == normalize("Pavement" if args.trade == "Roading" else args.trade)
         )
     }
 
@@ -190,6 +198,11 @@ async def main():
     }
 
     evidence_hash = None
+    if classification:
+        payload["trade_classification"] = decision_for_item(classification, item)
+        payload["classification_context"] = classification["request"]["schedule_sources"]
+        payload["classification_evidence"] = classification["request"]["evidence"]
+        payload["context_limit"] = "Schedule context, a draft trade recommendation and any explicitly attached excerpts are supplied; no other documents are implied to be reviewed."
     if args.evidence:
         from tender_assistant.text.extraction import find_evidence
         evidence_hash = sha256_file(args.evidence)
@@ -224,9 +237,10 @@ async def main():
             "for requirements used in the reason or differences. Do not invent "
             "facts from drawings or other material absent from the excerpts."
         )
-        if len(json.dumps(payload)) > 300000:
-            raise ValueError("Evidence payload too large for this pilot; extract with more specific --terms.")
         print("Evidence segments supplied:", len(evidence_package["evidence"]), flush=True)
+
+    if len(json.dumps(payload)) > 300000:
+        raise ValueError("Evidence payload too large for this pilot; select more specific excerpts.")
 
     with DefaultAzureCredential() as credential:
         async with Agent(
@@ -253,6 +267,7 @@ async def main():
         "candidate_ids": list(candidates),
         "rate_library_sha256": library_hash,
         "trade_filter": args.trade,
+        "trade_classification": classification,
         "cross_trade": args.cross_trade,
         "evidence_sha256": evidence_hash,
     })

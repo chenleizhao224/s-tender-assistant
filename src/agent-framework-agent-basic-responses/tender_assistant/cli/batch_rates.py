@@ -50,7 +50,9 @@ def parse_overrides(values, rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--rows", nargs="+", type=int, required=True)
-    parser.add_argument("--trade", required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--trade")
+    selection.add_argument("--classification", type=Path)
     parser.add_argument("--cross-trade", action="store_true")
     parser.add_argument("--version", default="v1", help="Saved selection set, e.g. v1 or v2.")
     parser.add_argument("--offline", action="store_true", help="Use saved results only; never call the model.")
@@ -76,6 +78,14 @@ def main():
     source = Path(os.environ["TENDER_INPUT_DIR"]) / "NTT 02" / "20260707 - Hopuhopu Development - Schedule of Prices [0A].xlsx"
     document = extract_schedule(source)
     items = {item["excel_row"]: item for item in prepare_schedule(document)}
+    classification = None
+    if args.classification:
+        from tender_assistant.schedules.trades import load_classification
+        classification = load_classification(args.classification)
+        saved_items = {x['item']['excel_row']: x['item'] for x in classification['request']['items']}
+        if any(items.get(row) != item for row, item in saved_items.items()):
+            raise ValueError('Classification and current schedule differ.')
+        decisions = {int(d['item_id'][1:]): d for d in classification['result']['decisions']}
     library_hash = sha256_file(Path(os.environ["SCHICK_RATES_PATH"]))
     entries = []
 
@@ -88,6 +98,19 @@ def main():
             if item is None:
                 raise ValueError("Row not found in schedule.")
             entry["description"] = item["description"]
+            trade = args.trade
+            if classification:
+                decision = decisions.get(row)
+                if decision is None:
+                    raise ValueError('Row missing from classification.')
+                trade = decision['trade']
+                entry['classification'] = decision
+            entry.update(allocated_trade=trade or 'Requires review', code=item['code'],
+                         quantity=item['quantity_resolved'], unit=item['unit'])
+            if not trade:
+                entry.update(state='unpriced', reason=decision['reason'])
+                entries.append(entry)
+                continue
             if not item["ready_for_rate_matching"]:
                 entry.update(state="unpriced", reason=item["reason"])
                 entries.append(entry)
@@ -99,14 +122,15 @@ def main():
                 if args.offline:
                     raise ValueError("No saved estimate available in offline mode.")
                 command = [sys.executable, "-m", "tender_assistant.cli.match_rates",
-                           "--row", str(row), "--trade", args.trade, "--save", str(path)]
+                           "--row", str(row), "--save", str(path)]
+                command += ['--classification', str(args.classification.resolve())] if classification else ['--trade', trade]
                 if args.cross_trade:
                     command.append("--cross-trade")
                 subprocess.run(command, check=True, timeout=300, cwd=root)
             if not path.exists():
                 entry.update(state="unpriced", reason="No estimate saved; no candidates under the selected filter.")
             else:
-                snapshot = checked_snapshot(path, item, args.trade, args.cross_trade)
+                snapshot = checked_snapshot(path, item, trade, args.cross_trade)
                 amount = recalculate(snapshot)
                 entry.update(
                     state="priced" if amount is not None else "unpriced",
@@ -133,6 +157,12 @@ def main():
     report["source_sha256"] = document["source_sha256"]
     report["created_at"] = datetime.now(timezone.utc).isoformat()
     report["trade_for_this_batch"] = args.trade
+    if classification:
+        report['classification_coverage'] = {
+            'fingerprint': content_hash(classification),
+            'decisions': classification['result']['decisions'],
+            'work_item_count': len(classification['request']['items']),
+        }
     report["selection"] = {
         "default_version": args.version,
         "overrides": {str(row): str(path) for row, path in sorted(overrides.items())},
